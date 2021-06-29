@@ -1,5 +1,5 @@
 # Allow a token to get a secret from the generic secret backend for the client role.
-path "database/creds/pg-readwrite" {
+path "database/creds/psql-role" {
   capabilities = ["read"]
 }
 
