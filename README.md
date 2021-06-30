@@ -120,7 +120,7 @@ We enable `demo-role` for the service account names `default` (`psql` namespace)
 ```bash
 vault write auth/kubernetes/role/demo-role \
     bound_service_account_names='vault,default' bound_service_account_namespaces='vault,psql' \
-    policies=`demo-policy, psql-policy` \
+    policies='demo-policy, psql-policy' \
     ttl=2h
 ```
 
