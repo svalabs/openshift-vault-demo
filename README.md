@@ -1,7 +1,7 @@
 # [OpenShift & Vault Demo](https://falcosuessgott.github.io/openshift-vault-demo/)
 > [15. OpenShift Anwendertreffen](https://www.openshift-anwender.de/) 30.6.2021
 
-This demo will create two OpenShifts project (`vault` and `psql`) with the goal to rotate postgres db passwords using Vaults [postgres-plugin](https://www.vaultproject.io/docs/secrets/databases/postgresql).
+This project will create two OpenShifts project (`vault` and `psql`) demonstratin how to rotate Postgred Databse passwords using Vaults [postgres-plugin](https://www.vaultproject.io/docs/secrets/databases/postgresql).
 
 ---
 
@@ -31,14 +31,14 @@ This demo will create two OpenShifts project (`vault` and `psql`) with the goal 
       * [Role](#role)
       * [Policy](#policy-1)
       * [Policy Role binding](#policy-role-binding-1)
-      * [Verify using Vault Client](#verify-using-vault-client-1)
-      * [Verify using psql](#verify-using-psql)
+      * [Credate new PostgreSQL credientials](#credate-new-postgresql-credientials)
+      * [Verify credientials have been changed](#verify-credientials-have-been-changed)
    * [Where to go now](#where-to-go-now)
       * [Vault Agent](#vault-agent)
          * [Verify in vault-agent pod](#verify-in-vault-agent-pod)
    * [Resources](#resources)
 
-<!-- Added by: morelly_t1, at: Tue 29 Jun 2021 03:58:19 PM CEST -->
+<!-- Added by: morelly_t1, at: Wed 30 Jun 2021 12:26:35 PM CEST -->
 
 <!--te-->
 
@@ -116,10 +116,11 @@ vault policy write demo-policy demo-policy.hcl
 ```
 
 ## Policy Role binding
+We enable `demo-role` for the service account names `default` (`psql` namespace) and `vault` (`vault` namespace). The `psql` namespace and the `psql-policy` will be configured later.
 ```bash
 vault write auth/kubernetes/role/demo-role \
-    bound_service_account_names=default bound_service_account_namespaces='vault' \
-    policies=psql-policy \
+    bound_service_account_names='vault,default' bound_service_account_namespaces='vault,psql' \
+    policies=`demo-policy, psql-policy` \
     ttl=2h
 ```
 
@@ -213,14 +214,10 @@ vault policy write psql-policy psql-policy.hcl
 ```
 
 ## Policy Role binding
-```bash
-vault write auth/kubernetes/role/demo-role \
-    bound_service_account_names=default bound_service_account_namespaces='psql' \
-    policies=psql-policy \
-    ttl=2h
-```
+We binded the policy earlier see ([policy-role-binding](#policy-role-binding)).
 
-## Verify using Vault Client
+
+## Credate new PostgreSQL credientials
 ```bash
 vault read database/creds/psql-role
 ```
@@ -250,7 +247,7 @@ ALTER ROLE "user" CREATEROLE;
 in the psql shell of the pod (see next step).
 
 
-## Verify using psql
+## Verify credientials have been changed
 ```bash
 POD=$(oc get po --no-headers -o custom-columns=NAME:.metadata.name -lname=postgresql)
 oc rsh $POD # in postgres pod shell
@@ -301,7 +298,7 @@ This token could be then mounted into other Pods in order to authenticate toward
 
 ---
 # Resources
-* https://www.openshift.com/blog/integrating-hashicorp-vault-in-openshift-4
-* https://www.vaultproject.io/docs/secrets/databases/postgresql
-* https://github.com/openlab-red/hashicorp-vault-for-openshift
+* [https://www.openshift.com/blog/integrating-hashicorp-vault-in-openshift-4](https://www.openshift.com/blog/integrating-hashicorp-vault-in-openshift-4)
+* [https://www.vaultproject.io/docs/secrets/databases/postgresql](https://www.vaultproject.io/docs/secrets/databases/postgresql)
+* [https://github.com/openlab-red/hashicorp-vault-for-openshift](https://github.com/openlab-red/hashicorp-vault-for-openshift)
 
