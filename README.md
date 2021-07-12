@@ -1,7 +1,7 @@
 # [OpenShift & Vault Demo](https://falcosuessgott.github.io/openshift-vault-demo/)
 > [15. OpenShift Anwendertreffen](https://www.openshift-anwender.de/) 30.6.2021
 
-This project will create two OpenShifts project (`vault` and `psql`) demonstratin how to rotate Postgres Databse passwords using Vaults [postgres-plugin](https://www.vaultproject.io/docs/secrets/databases/postgresql).
+This repository describes how to use Vault within OpenShift. Thus it creates two OpenShifts projects(`vault` and `psql`) showing how to rotate Postgres Database credientials using Vaults [postgres-plugin](https://www.vaultproject.io/docs/secrets/databases/postgresql).
 
 ---
 
