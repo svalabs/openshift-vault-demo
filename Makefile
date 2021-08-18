@@ -1,10 +1,17 @@
-.PHONY: docs
+URL ?= localhost:1313
 
-default: docs
-docs:
-	gh-md-toc --insert README.md
-	make -C . clean
+default: hugo
+
+.PHONY: hugo
+hugo: clean
+	firefox $(URL)
+	hugo server -s docs/
 
 .PHONY: clean
 clean:
-	rm README.md.*
+	@rm -rf public/
+
+.PHONY: build
+build: clean
+	hugo --minify -s docs -d ../public
+	firefox public/index.html
