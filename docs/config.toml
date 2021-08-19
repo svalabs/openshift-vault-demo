@@ -23,3 +23,14 @@ pygmentsUseClasses = true
     name = "Demo"
     url = "/demo/"
     weight = 2
+
+[params]
+  homepage_button_link = '/demo'
+  homepage_button_text = 'Start Tutorial'
+  homepage_intro = 'Tutorial showing how to use Vault within OpenShift.'
+  homepage_image = '/images/terminal.gif'
+
+  ## You can enable to add anchor links to header elements
+  enable_anchor_link = true
+  [params.logo]
+      standard  = "/images/logo.svg"

@@ -7,3 +7,4 @@ weight: 8
 * [https://www.openshift.com/blog/integrating-hashicorp-vault-in-openshift-4](https://www.openshift.com/blog/integrating-hashicorp-vault-in-openshift-4)
 * [https://www.vaultproject.io/docs/secrets/databases/postgresql](https://www.vaultproject.io/docs/secrets/databases/postgresql)
 * [https://github.com/openlab-red/hashicorp-vault-for-openshift](https://github.com/openlab-red/hashicorp-vault-for-openshift)
+* [https://github.com/zerostaticthemes/hugo-whisper-theme](https://github.com/zerostaticthemes/hugo-whisper-theme)
