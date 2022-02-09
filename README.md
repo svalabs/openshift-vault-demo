@@ -1,304 +1,299 @@
-# [OpenShift & Vault Demo](https://falcosuessgott.github.io/openshift-vault-demo/)
-> [15. OpenShift Anwendertreffen](https://www.openshift-anwender.de/) 30.6.2021
+# Webinar Managing Secrets in OpenShift with Hashicorp Vault 20.01.2022
 
-This repository describes how to use Vault within OpenShift. Thus it creates two OpenShifts projects(`vault` and `psql`) showing how to rotate Postgres Database credientials using Vaults [postgres-plugin](https://www.vaultproject.io/docs/secrets/databases/postgresql).
-
----
-
-# ToC
 <!--ts-->
-   * [<a href="https://falcosuessgott.github.io/openshift-vault-demo/" rel="nofollow">OpenShift &amp; Vault Demo</a>](#openshift--vault-demo)
-   * [ToC](#toc)
-   * [Prerequisites](#prerequisites)
-   * [Usage](#usage)
-   * [Vault](#vault)
-      * [Project creation](#project-creation)
-      * [Installation](#installation)
-      * [Initialization](#initialization)
-      * [Unsealing](#unsealing)
-      * [Configure the Kubernetes Auth method](#configure-the-kubernetes-auth-method)
-      * [Policy](#policy)
-      * [Policy Role binding](#policy-role-binding)
-      * [Write secret](#write-secret)
-      * [Verify using Vault Client](#verify-using-vault-client)
-   * [Postgres](#postgres)
-      * [Project creation](#project-creation-1)
-      * [Deployment](#deployment)
-      * [Enable kubernetes auth](#enable-kubernetes-auth)
-      * [Verify](#verify)
-   * [Vault Postgresql Plugin](#vault-postgresql-plugin)
-      * [Configuration](#configuration)
-      * [Role](#role)
-      * [Policy](#policy-1)
-      * [Policy Role binding](#policy-role-binding-1)
-      * [Credate new PostgreSQL credientials](#credate-new-postgresql-credientials)
-      * [Verify credientials have been changed](#verify-credientials-have-been-changed)
-   * [Where to go now](#where-to-go-now)
-      * [Vault Agent](#vault-agent)
-         * [Verify in vault-agent pod](#verify-in-vault-agent-pod)
-   * [Resources](#resources)
+   * [Webinar Managing Secrets in OpenShift with Hashicorp Vault 20.01.2022](#webinar-managing-secrets-in-openshift-with-hashicorp-vault-20012022)
+   * [0. Vault Installation](#0-vault-installation)
+   * [1. Read and Write Secrets](#1-read-and-write-secrets)
+      * [1. enable kv engine kv](#1-enable-kv-engine-kv)
+      * [2. write secret secret:](#2-write-secret-secret)
+      * [3. write my_policy:](#3-write-my_policy)
+      * [4. read secret using Vault CLI](#4-read-secret-using-vault-cli)
+   * [2. Kubernetes Auth Method](#2-kubernetes-auth-method)
+      * [1. enable kubernetes engine](#1-enable-kubernetes-engine)
+      * [2. create a role that uses the policy:](#2-create-a-role-that-uses-the-policy)
+      * [3. verify using vault agent injector](#3-verify-using-vault-agent-injector)
+   * [3. Create postgres app](#3-create-postgres-app)
+   * [4. DB Secret Engine](#4-db-secret-engine)
+      * [1. Enable db secret engine](#1-enable-db-secret-engine)
+      * [2. Create Connection](#2-create-connection)
+      * [3. Create a Database Role:](#3-create-a-database-role)
+      * [4. Update my_policy:](#4-update-my_policy)
+      * [5. verify credential generation](#5-verify-credential-generation)
+   * [4. Create deployment that used the dynamic db secrets](#4-create-deployment-that-used-the-dynamic-db-secrets)
+      * [1. view connection in WebUI](#1-view-connection-in-webui)
 
-<!-- Added by: morelly_t1, at: Wed 30 Jun 2021 12:26:35 PM CEST -->
+<!-- Added by: morelly_t1, at: Wed 09 Feb 2022 12:12:16 PM CET -->
 
 <!--te-->
 
-# Prerequisites
-Tested with
-* OpenShift v4.7.8
-* `oc` v4.7.8
-* `vault` v1.5.4
-* `helm` v3.4.2
-
-You will need a user who is able to create:
-* `ClusterRole`
-* `ClusterRolebinding`
-* `MutatingWebhookConfiguration`
-* `Deployment`
-* `ServiceAccount`
-* `ConfigMap`
-* `Statefulset`
-* `Route`
-* `NetworkPolicy`
-* `PersistentVolumeClaim`
-
-# Usage
-Clone this repository and follow the instructions:
-```bash
-git clone --recurse-submodules https://github.com/FalcoSuessgott/openshift-vault-demo
-```
-
-# Vault
-We will create a role `demo-role` which uses the `kubernetes` auth method by using the service accounts JWT. This role then gets binded to a [`demo-policy`](demo-policy.hcl) which is allowed to read and list secrets at `openshift/anwendertreffen` in Vaults KV2 store.
-
-## Project creation
-```bash
-oc new-project vault
-```
-
-## Installation
-```bash
-export VAULT_DOMAIN=vault.apps.tld
-helm install vault vault-helm -f override-values.yml --set server.route.host=${VAULT_DOMAIN}
-```
-
-## Initialization
-```bash
-POD=$(oc get pods -lapp.kubernetes.io/name=vault --no-headers -o custom-columns=NAME:.metadata.name)
-oc rsh $POD
-vault operator init --tls-skip-verify -key-shares=1 -key-threshold=1 # in vault pod
-```
-
-## Unsealing
-```bash
-# save generated keys and token from output before
-export KEYS=QzlUGvdPbIcM83UxyjuGd2ws7flZdNimQVCNbUvI2aU=
-export ROOT_TOKEN=s.UPBPfhDXYOtnv8mELhPA4br7
-export VAULT_TOKEN=${ROOT_TOKEN}
-vault operator unseal --tls-skip-verify $KEYS
-```
-
-## Configure the Kubernetes Auth method
-```bash
-# in $POD with env vars exported (step above)
-JWT=$(cat /var/run/secrets/kubernetes.io/serviceaccount/token)
-KUBERNETES_HOST=https://${KUBERNETES_PORT_443_TCP_ADDR}:443
-vault auth enable --tls-skip-verify kubernetes
-vault write --tls-skip-verify auth/kubernetes/config token_reviewer_jwt=$JWT kubernetes_host=$KUBERNETES_HOST kubernetes_ca_cert=@/var/run/secrets/kubernetes.io/serviceaccount/ca.crt
-```
-
-## Policy
-```bash
-# from local cli
-export VAULT_SKIP_VERIFY=true
-export VAULT_ADDR=https://$(oc get route vault --no-headers -o custom-columns=HOST:.spec.host)
-export VAULT_TOKEN=${ROOT_TOKEN} # from vault operator init output
-vault policy write demo-policy demo-policy.hcl
-```
-
-## Policy Role binding
-We enable `demo-role` for the service account names `default` (`psql` namespace) and `vault` (`vault` namespace). The `psql` namespace and the `psql-policy` will be configured later.
-```bash
-vault write auth/kubernetes/role/demo-role \
-    bound_service_account_names='vault,default' bound_service_account_namespaces='vault,psql' \
-    policies='demo-policy, psql-policy' \
-    ttl=2h
-```
-
-## Write secret
-```bash
-vault secrets enable -path=openshift kv
-vault write openshift/anwendertreffen password=FooBar42!
-```
-
-## Verify using Vault Client
-```bash
-vault kv get openshift/anwendertreffen
-```
-
-returns:
-
-```sh
-====== Data ======
-Key         Value
----         -----
-password    FooBar42!
-```
-
-# Postgres
-We will create a new project `psql` containing a postgres application with `psql` databse initialized.
-Afterwards we configure and verify if the postgres db can authenticate towards `vault` using the serviceaccounts JWT.
-
-## Project creation
-```bash
-oc new-project psql
-```
-
-## Deployment
-```bash
-# in psql project -> $(oc project psql)
-oc new-app postgresql-persistent \
-    --name=postgresql -lname=postgresql  \
-    --param DATABASE_SERVICE_NAME=postgresql --param POSTGRESQL_DATABASE=anwenderdb \
-    --param POSTGRESQL_USER=user --param POSTGRESQL_PASSWORD=password \
-    --param VOLUME_CAPACITY=1Gi \
-    --env POSTGRESQL_ADMIN_PASSWORD=postgres
-```
-
-## Enable kubernetes auth
-```bash
-JWT=$(oc sa get-token default -n psql)
-vault write auth/kubernetes/login role=demo-role jwt=${JWT}
-```
-
-## Verify
-```bash
-VAULT_TOKEN=s.mCgDQH1SvtWT2lxdiqO2dvHj vault read openshift/anwendertreffen # from output before
-```
-
-returns:
+# 0. Vault Installation
 
 ```bash
+oc project vault-demo # if the project name is different, please adjust "vault-demo" everywhere it is used
+helm repo add hashicorp https://helm.releases.hashicorp.com
+helm repo update
+helm install vault hashicorp/vault --set "global.openshift=true" --set "server.dev.enabled=true" # if you use another name thant "vault", you have to adjust some steps
+```
+
+access the vault UI
+
+```bash
+oc port-forward service/vault 8200:8200 # open localhost:8200
+```
+
+# 1. Read and Write Secrets
+## 1. enable kv engine `kv`
+## 2. write secret `secret`:
+
+```base
+database_password=passw0rd
+database_username=Us3Rname
+```
+
+## 3. write `my_policy`:
+
+```hcl
+path "kv/data/secret" {
+  capabilities = ["read", "list"]
+}
+```
+
+## 4. read secret using Vault CLI
+```bash
+# generate token with my_policy attached
+VAULT_ADDR="http://127.0.0.1:8200" VAULT_TOKEN="root" vault token create -policy=my_policy
+Key                  Value
+---                  -----
+token                s.ZtU19C1yEQTGsvyy1Fw8kMDO # our new token we use for further commands
+token_accessor       qHzySDOtPkCmybeN6W84l44L
+token_duration       768h
+token_renewable      true
+token_policies       ["default" "my_policy"]
+identity_policies    []
+policies             ["default" "my_policy"]
+
+# verify we got the correct policy
+VAULT_ADDR="http://127.0.0.1:8200" VAULT_TOKEN="s.ZtU19C1yEQTGsvyy1Fw8kMDO" vault token lookup
 Key                 Value
 ---                 -----
-refresh_interval    768h
-password            FooBar42!
-```
+accessor            qHzySDOtPkCmybeN6W84l44L
+creation_time       1644397501
+creation_ttl        768h
+display_name        token
+entity_id           n/a
+expire_time         2022-03-13T09:05:01.34468316Z
+explicit_max_ttl    0s
+id                  s.ZtU19C1yEQTGsvyy1Fw8kMDO
+issue_time          2022-02-09T09:05:01.344687913Z
+meta                <nil>
+num_uses            0
+orphan              false
+path                auth/token/create
+policies            [default my_policy] # my_policy is attached
+renewable           true
+ttl                 767h59m43s
+type                service
 
-# Vault Postgresql Plugin
-We will enable and configure Vaults Postgresql database plugin with a maximum ttl of 24h. For this we add a new role `psql-role`. The role is binded to the [`psql-policy`](psql-policy.hcl) which enabled creating and listing secrets at the `openshift/anwendertreffen` path. The role `demo-role` gets extends about the newly created policy. Finally, we verify the rotation of database passwords in the postgres shell.
-
-## Configuration
-```bash
-vault secrets enable database
-vault write database/config/postgresql \
-    plugin_name=postgresql-database-plugin \
-    allowed_roles="psql-role" \
-    connection_url="postgresql://{{username}}:{{password}}@postgresql.psql.svc:5432/anwenderdb?sslmode=disable" \
-    username="user" \
-    password="password"
-```
-
-## Role
-```bash
-vault write database/roles/psql-role \
-    db_name=postgresql \
-    creation_statements="CREATE ROLE \"{{name}}\" WITH LOGIN PASSWORD '{{password}}' VALID UNTIL '{{expiration}}'; \
-        GRANT SELECT ON ALL TABLES IN SCHEMA public TO \"{{name}}\";" \
-    default_ttl="1h" \
-    max_ttl="24h"
-```
-
-## Policy
-```bash
-vault policy write psql-policy psql-policy.hcl
-```
-
-## Policy Role binding
-We binded the policy earlier see ([policy-role-binding](#policy-role-binding)).
-
-
-## Credate new PostgreSQL credientials
-```bash
-vault read database/creds/psql-role
-```
-
-returns:
-
-```bash
+# read kv secret
+VAULT_ADDR="http://127.0.0.1:8200" VAULT_TOKEN="s.ZtU19C1yEQTGsvyy1Fw8kMDO" vault kv get kv/secret
+======= Metadata =======
 Key                Value
 ---                -----
-lease_id           database/creds/psql-role/5omHaI7KpbHVl9SsPRuJXkUr
-lease_duration     1h
-lease_renewable    true
-password           A1a-rAN7ZgiGL15w8YQm
-username           v-root-psql-rol-8J4RMv2vQBluii4lyuPa-1624970070
+created_time       2022-02-09T09:05:56.410144485Z
+custom_metadata    <nil>
+deletion_time      n/a
+destroyed          false
+version            1
+
+========== Data ==========
+Key                  Value
+---                  -----
+database_password    passw0rd # secrets we have written
+database_username    passw0rd
+
+# delete ends in 403 permission denied
+VAULT_ADDR="http://127.0.0.1:8200" VAULT_TOKEN="s.ZtU19C1yEQTGsvyy1Fw8kMDO" vault kv delete kv/secret
+Error deleting kv/secret: Error making API request.
+
+URL: DELETE http://127.0.0.1:8200/v1/kv/data/secret
+Code: 403. Errors:
+
+* 1 error occurred:
+        * permission denied # because our policy doesnt allow the delete capability
 ```
+
+---
+# 2. Kubernetes Auth Method
+## 1. enable kubernetes engine
+* kubernetes host: https://kubernetes.default.svc.cluster.local
+* kubernetes CA cert: `ca.crt` from `vault` service account
+* token reviewer jwt: `token` from `vault` service account
+
+## 2. create a role that uses the policy:
+Access -> Auth Methods -> View Configuration -> Roles
+* Name : `my_role`
+* Bound SA names: `vault` (Service account, created by helm)
+* Bound SA ns: `vault-demo` (current namespace)
+* Policies: `my_policy`
+
+If you use another service account here, make sure he has the `role-tokenreview-binding`:
+
+```yaml
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: role-tokenreview-binding
+  namespace: vault-demo
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: system:auth-delegator
+subjects:
+  - kind: ServiceAccount
+    name: vault
+    namespace: vault-demo
+```
+
+## 3. verify using vault agent injector
+
+create the following deployment:
+
+```yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: static-secret
+  labels:
+    app: static-secret
+spec:
+  selector:
+    matchLabels:
+      app: static-secret
+  replicas: 1
+  template:
+    metadata:
+      annotations:
+        vault.hashicorp.com/agent-inject: "true"
+        vault.hashicorp.com/role: "my_role" # kubernetes auth role
+        vault.hashicorp.com/agent-inject-secret-database-config.txt: 'kv/data/secret' # path to secret
+        vault.hashicorp.com/agent-inject-template-database-config.txt: |
+          {{- with secret "kv/data/secret" -}}
+          username={{ .Data.data.database_username }}
+          password={{ .Data.data.database_password }}
+          {{- end -}}
+      labels:
+        app: static-secret
+    spec:
+      serviceAccountName: vault # service account
+      containers:
+        - name: static-secret
+          image: nicholasjackson/fake-service:v0.7.3
+```
+
+verify secret has been written to filesystem
+
+```bash
+# in the static-secret pod
+cat /vault/secrets/database-config.txt
+```
+
+# 3. Create postgres app
+
+```bash
+oc new-app postgresql-persistent --name=postgresql -lname=postgresql \
+  --param DATABASE_SERVICE_NAME=postgresql \
+  --param POSTGRESQL_DATABASE=my_db \
+  --param POSTGRESQL_USER=user \
+  --param POSTGRESQL_PASSWORD=password \
+  --param VOLUME_CAPACITY=1Gi \
+  --env POSTGRESQL_ADMIN_PASSWORD=postgres
+```
+
+# 4. DB Secret Engine
+## 1. Enable db secret engine
+* Secrets -> Enable -> Database
+
+## 2. Create Connection
+* DB Plugin: `postgresql-database-plugin`
+* Connection name: `my-db`
+* Conection URL: `postgresql://{{username}}:{{password}}@postgresql.vault-demo.svc:5432/my_db?sslmode=disable` # note the postgresql service used here
+* Username: `user`
+* Password: `password`
+
+## 3. Create a Database Role:
+* Role name: `my_role`
+* Database name: `my_db`
+* Type of role: `dynamic`
+* [x] TTL: `180 Seconds`
+* [x] Max TTL: `24 hours`
+* Creation Statement:
+
+```sql
+CREATE ROLE "{{name}}" WITH LOGIN PASSWORD '{{password}}' VALID UNTIL '{{expiration}}';  GRANT SELECT ON ALL TABLES IN SCHEMA public TO "{{name}}";
+```
+
+## 4. Update `my_policy`:
+```hcl
+path "kv/data/secret" {
+  capabilities = ["read", "list"]
+}
+
+path "database/creds/my_role" {
+  capabilities = ["read"]
+}
+```
+
+## 5. verify credential generation
+* Database -> Roles -> my_role -> new credentials
 
 if you instead receive:
 ```bash
 pq: permission denied to create role
 ```
 
-execute
+execute in the psql pod
+
 ```sql
 ALTER ROLE "user" CREATEROLE;
 ```
 
-in the psql shell of the pod (see next step).
+# 4. Create deployment that used the dynamic db secrets
 
-
-## Verify credientials have been changed
-```bash
-POD=$(oc get po --no-headers -o custom-columns=NAME:.metadata.name -lname=postgresql)
-oc rsh $POD # in postgres pod shell
-psql # in psql shell
-\du
+```yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: dynamic-secret
+  labels:
+    app: dynamic-secret
+spec:
+  selector:
+    matchLabels:
+      app: dynamic-secret
+  replicas: 1
+  template:
+    metadata:
+      annotations:
+        vault.hashicorp.com/agent-inject: "true"
+        vault.hashicorp.com/role: "my_role" # kubernetes auth role
+        vault.hashicorp.com/agent-inject-secret-database-config.txt: 'database/creds/my_role' # path to dynamic creds
+        vault.hashicorp.com/agent-inject-template-database-config.txt: |
+          {{- with secret "database/creds/my_role" -}}
+            export DATABASE_URL=postgres://{{ .Data.username }}:{{ .Data.password }}@postgresql.vault-demo.svc:5432/my_db?sslmode=disable
+          {{- end -}}
+      labels:
+        app: dynamic-secret
+    spec:
+      serviceAccountName: vault # service account
+      containers:
+        - name: dynamic-secret
+          image: sosedoff/pgweb
+          args:
+            ['sh', '-c', 'source /vault/secrets/database-config.txt && /usr/bin/pgweb --bind=0.0.0.0 --listen=8081']
 ```
 
-returns:
-```bash
-postgres=# \du
-                                                      List of roles
-                    Role name                    |                         Attributes                         | Member of
--------------------------------------------------+------------------------------------------------------------+-----------
- postgres                                        | Superuser, Create role, Create DB, Replication, Bypass RLS | {}
- user                                            | Create role                                                | {}
- v-root-psql-rol-8J4RMv2vQBluii4lyuPa-1624970070 | Password valid until 2021-06-29 13:34:35+00                | {}
- ```
-
----
-
-# Where to go now
-At has been showed how vault can be configured in order to rotate postgres passwords for a certain ttl. This can easily modified for several other dbs (see https://www.vaultproject.io/docs/secrets/databases).
-It is recommended to use the [Vault agent](https://www.vaultproject.io/docs/agent) to automate the initialization, unsealing and configuration of Vault. Another thing to think about is using the [Vault Injector](https://github.com/hashicorp/vault-k8s) which injects secrets in pods using sicecar container.
-
-## Vault Agent
-Lets create a Deployment, which instantiates a `vault-agent` container starting with the [`vault-agent`](vault-agent/vault-agent-config.yaml) config file:
-
-```bash
-oc project psql
-oc apply -f vault-agent -n psql
-```
-
-### Verify in vault-agent pod
-Now verify that the vault-agent Pod can authenticate to the vault using its ServiceAccount JWT token:
+## 1. view connection in WebUI
 
 ```bash
-POD=$(oc get pods -lapp.kubernetes.io/name=vault-agent --no-headers -o custom-columns=NAME:.metadata.name -n psql)
-oc -n psql exec $POD -- cat /var/run/secrets/vaultproject.io/token
+oc port-forward deployment/website 8081 8081
 ```
-
-returns:
-
-```
-s.1ZOURnygW4gV2IQ8TBSH08dv
-```
-
-This token could be then mounted into other Pods in order to authenticate towards Vault.
-
----
-# Resources
-* [https://www.openshift.com/blog/integrating-hashicorp-vault-in-openshift-4](https://www.openshift.com/blog/integrating-hashicorp-vault-in-openshift-4)
-* [https://www.vaultproject.io/docs/secrets/databases/postgresql](https://www.vaultproject.io/docs/secrets/databases/postgresql)
-* [https://github.com/openlab-red/hashicorp-vault-for-openshift](https://github.com/openlab-red/hashicorp-vault-for-openshift)
-
