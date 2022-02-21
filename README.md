@@ -109,7 +109,7 @@ version            1
 Key                  Value
 ---                  -----
 database_password    passw0rd # secrets we have written
-database_username    passw0rd
+database_username    Us3Rname
 
 # delete ends in 403 permission denied
 VAULT_ADDR="http://127.0.0.1:8200" VAULT_TOKEN="s.ZtU19C1yEQTGsvyy1Fw8kMDO" vault kv delete kv/secret
@@ -125,7 +125,7 @@ Code: 403. Errors:
 ---
 # 2. Kubernetes Auth Method
 ## 1. enable kubernetes engine
-* kubernetes host: https://kubernetes.default.svc.cluster.local
+* kubernetes host: `https://kubernetes.default.svc.cluster.local`
 * kubernetes CA cert: `ca.crt` from `vault` service account
 * token reviewer jwt: `token` from `vault` service account
 
@@ -257,7 +257,7 @@ execute in the psql pod
 ALTER ROLE "user" CREATEROLE;
 ```
 
-# 4. Create deployment that used the dynamic db secrets
+# 4. Create deployment that uses the dynamic db secrets
 
 ```yaml
 apiVersion: apps/v1
